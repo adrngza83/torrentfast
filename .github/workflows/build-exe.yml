@@ -5,6 +5,8 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -41,10 +43,11 @@ jobs:
           name: TorrentFast-windows
           path: dist/*.exe
       - name: Publicar versión
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: TorrentFast ${{ github.ref_name }}
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          name: TorrentFast ${{ github.event.release.tag_name || github.ref_name }}
           body: |
             Descarga **TorrentFast.exe**, dale doble clic y se abre en tu navegador (http://localhost:8800).
             `TorrentFast-CLI.exe` es la versión de terminal.
