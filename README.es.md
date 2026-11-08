@@ -28,6 +28,7 @@ Creado por <b>Adrián Garza Garza</b> (<a href="https://github.com/adrngza83">@a
 - ▶️ **Descarga secuencial** para ver un video mientras baja
 - ⏯ Pausar/reanudar todo; si cierras la app, sigue donde se quedó
 - 📱 **Desde el celular** (opcional): contrólala desde cualquier dispositivo en tu WiFi
+- 🚀 **Bajada a toda velocidad, subida limitada**: pones la velocidad de tu internet (300 Mbps por defecto) y la subida se limita a un porcentaje (10% por defecto); la bajada nunca se limita
 - 🌐 Español e inglés, automático según el idioma de tu sistema
 
 ## Por qué es rápido

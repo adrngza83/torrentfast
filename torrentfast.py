@@ -62,6 +62,17 @@ def eta(remaining, rate):
     return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
 
 
+DEFAULT_LINE_MBPS = 300   # your internet speed in megabits per second
+DEFAULT_UP_PCT = 10       # share of that speed allowed for uploading
+
+
+def upload_limit_bytes(line_mbps, up_pct):
+    """Upload cap in bytes/s from line speed (Mbps) and a percentage. 0 = unlimited."""
+    if not line_mbps or not up_pct or up_pct >= 100:
+        return 0
+    return int(line_mbps * 1_000_000 / 8 * up_pct / 100)
+
+
 def make_session(args):
     s = {
         "user_agent": "TorrentFast/1.0 libtorrent/" + lt.__version__,
@@ -74,10 +85,17 @@ def make_session(args):
         # Más conexiones y más rápidas
         "connections_limit": 2000,
         "connection_speed": 200,          # conexiones nuevas por segundo
-        "unchoke_slots_limit": 64,
+        "unchoke_slots_limit": 40,
         "max_out_request_queue": 1500,
         "max_allowed_in_request_queue": 2000,
-        "request_queue_time": 5,
+        "request_queue_time": 3,
+        # High-bandwidth tuning (300 Mbps and up)
+        "max_queued_disk_bytes": 64 * 1024 * 1024,
+        "recv_socket_buffer_size": 4 * 1024 * 1024,
+        "send_socket_buffer_size": 1024 * 1024,
+        "hashing_threads": 4,
+        "rate_limit_ip_overhead": False,   # protocol overhead doesn't eat into the limits
+        "download_rate_limit": 0,          # download: never limited
         "whole_pieces_threshold": 20,
         "peer_timeout": 60,
         "inactivity_timeout": 300,
@@ -99,9 +117,11 @@ def make_session(args):
                       | lt.alert.category_t.storage_notification,
         "active_downloads": 8, "active_seeds": 8, "active_limit": 20,
     }
-    if args.max_down:
+    s["upload_rate_limit"] = upload_limit_bytes(
+        getattr(args, "line_mbps", DEFAULT_LINE_MBPS), getattr(args, "up_pct", DEFAULT_UP_PCT))
+    if getattr(args, "max_down", 0):
         s["download_rate_limit"] = args.max_down * 1024
-    if args.max_up:
+    if getattr(args, "max_up", 0):
         s["upload_rate_limit"] = args.max_up * 1024
     return lt.session(s)
 
@@ -169,7 +189,9 @@ def main():
     ap.add_argument("--seq", action="store_true", help="descarga secuencial (streaming)")
     ap.add_argument("--seed", type=float, default=0.0, help="seguir sembrando hasta este ratio (0 = salir al terminar)")
     ap.add_argument("--max-down", type=int, default=0, help="límite de bajada en KB/s (0 = sin límite)")
-    ap.add_argument("--max-up", type=int, default=0, help="límite de subida en KB/s (0 = sin límite)")
+    ap.add_argument("--max-up", type=int, default=0, help="límite de subida en KB/s (anula --up-pct)")
+    ap.add_argument("--line-mbps", type=float, default=DEFAULT_LINE_MBPS, help="velocidad de tu internet en Mbps (default 300)")
+    ap.add_argument("--up-pct", type=float, default=DEFAULT_UP_PCT, help="%% de esa velocidad para subir (default 10)")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)

@@ -35,6 +35,7 @@ Created by <b>Adrián Garza Garza</b> (<a href="https://github.com/adrngza83">@a
 - ▶️ **Sequential download** to watch a video while it downloads
 - ⏯ Pause/resume everything; downloads continue where they left off after a restart
 - 📱 **Phone access** (optional): control it from any device on your Wi-Fi
+- 🚀 **Full download speed, capped upload**: set your internet speed (default 300 Mbps) and upload is limited to a share of it (default 10%); download is never limited
 - 🌐 Spanish and English, automatic by system language
 
 ## Why it's fast

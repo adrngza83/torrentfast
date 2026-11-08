@@ -68,13 +68,13 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .dlg .body{padding:22px 24px}
 .dlg h3{margin:0 0 12px;font:600 20px "Segoe UI Variable Display","Segoe UI",sans-serif}
 .dlg .foot{display:flex;justify-content:flex-end;gap:8px;padding:16px 24px;background:var(--pane);border-top:1px solid var(--line)}
-textarea,select{width:100%;font:inherit;color:var(--tx);background:var(--card2);border:1px solid var(--line);border-bottom:2px solid var(--mut);border-radius:5px;padding:8px 10px;outline:0;user-select:text;-webkit-user-select:text}
+textarea,select,.num{width:100%;font:inherit;color:var(--tx);background:var(--card2);border:1px solid var(--line);border-bottom:2px solid var(--mut);border-radius:5px;padding:8px 10px;outline:0;user-select:text;-webkit-user-select:text}
 textarea{height:110px;resize:none}
 textarea:focus,select:focus{border-bottom-color:var(--accent)}
 .set{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--line)}
 .set:last-child{border:0}
 .set small{display:block;color:var(--mut)}
-.set select{width:auto}
+.set select{width:auto}.num{width:96px;text-align:right}
 .toast{position:fixed;bottom:44px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);padding:10px 16px;border-radius:7px;display:none;gap:10px;align-items:center;z-index:10}
 .toast.on{display:flex}
 .drop{position:fixed;inset:10px;border:2px dashed var(--accent);border-radius:12px;background:color-mix(in srgb,var(--accent) 10%,transparent);display:none;place-items:center;font-size:18px;z-index:8;pointer-events:none}
@@ -119,6 +119,10 @@ body.focus .row[data-k=done],body.focus .row[data-k=paused]{display:none}
   <div class="body"><h3 data-t="settings"></h3>
     <div class="set"><div><span data-t="language"></span></div>
       <select id="lang"><option value="auto" data-t="auto"></option><option value="es">Español</option><option value="en">English</option></select></div>
+    <div class="set"><div><span data-t="lineSpeed"></span><small data-t="lineSub"></small></div>
+      <span><input type="number" id="lineMbps" min="1" max="100000" step="1" class="num"> Mbps</span></div>
+    <div class="set"><div><span data-t="upMax"></span><small id="upCalc"></small></div>
+      <select id="upPct"><option value="5">5%</option><option value="10">10%</option><option value="20">20%</option><option value="50">50%</option><option value="100" data-t="noLimit"></option></select></div>
     <div class="set"><div><span data-t="saveIn"></span><small id="savePath"></small></div>
       <button class="btn std" id="chooseDir" data-t="change"></button></div>
     <div class="set" id="assocRow"><div><span data-t="assoc"></span><small data-t="assocSub"></small></div>
@@ -137,7 +141,7 @@ const I18N={
  es:{all:"Todos",down:"Descargando",meta:"Buscando datos",done:"Completados",paused:"Pausados",error:"Con error",check:"Verificando",
   focus:"Modo enfoque",settings:"Configuración",addMagnet:"Agregar magnet",openTorrent:"Abrir .torrent",pauseAll:"Pausar todo",resumeAll:"Reanudar todo",
   folder:"Abrir carpeta",download:"Descargar",cancel:"Cancelar",close:"Cerrar",magnetPh:"Pega uno o varios enlaces magnet:?xt=… (uno por línea)",
-  language:"Idioma",auto:"Automático",saveIn:"Guardar descargas en",change:"Cambiar…",assoc:"Abrir magnets y .torrent con TorrentFast",
+  language:"Idioma",lineSpeed:"Velocidad de tu internet",lineSub:"La bajada nunca se limita",upMax:"Subida máxima",noLimit:"Sin límite",upTo:"hasta",limit:"límite",auto:"Automático",saveIn:"Guardar descargas en",change:"Cambiar…",assoc:"Abrir magnets y .torrent con TorrentFast",
   assocSub:"Al dar clic en un magnet en cualquier página se agrega aquí",enable:"Activar",enabled:"Activado ✓",phone:"Desde el celular",
   dropHere:"Suelta tus archivos .torrent aquí",emptyT:"Nada por aquí todavía",emptyS:"Pega un magnet con Ctrl+V o arrastra un .torrent a esta ventana",
   pause:"Pausar",resume:"Reanudar",seq:"Descarga secuencial (para ver video mientras baja)",remove:"Quitar de la lista",del:"Borrar archivos",
@@ -147,7 +151,7 @@ const I18N={
  en:{all:"All",down:"Downloading",meta:"Fetching metadata",done:"Completed",paused:"Paused",error:"Errors",check:"Checking",
   focus:"Focus mode",settings:"Settings",addMagnet:"Add magnet",openTorrent:"Open .torrent",pauseAll:"Pause all",resumeAll:"Resume all",
   folder:"Open folder",download:"Download",cancel:"Cancel",close:"Close",magnetPh:"Paste one or more magnet:?xt=… links (one per line)",
-  language:"Language",auto:"Automatic",saveIn:"Save downloads to",change:"Change…",assoc:"Open magnets and .torrent files with TorrentFast",
+  language:"Language",lineSpeed:"Your internet speed",lineSub:"Download is never limited",upMax:"Max upload",noLimit:"Unlimited",upTo:"up to",limit:"limit",auto:"Automatic",saveIn:"Save downloads to",change:"Change…",assoc:"Open magnets and .torrent files with TorrentFast",
   assocSub:"Clicking a magnet link on any page adds it here",enable:"Enable",enabled:"Enabled ✓",phone:"From your phone",
   dropHere:"Drop your .torrent files here",emptyT:"Nothing here yet",emptyS:"Paste a magnet with Ctrl+V or drag a .torrent into this window",
   pause:"Pause",resume:"Resume",seq:"Sequential download (watch video while downloading)",remove:"Remove from list",del:"Delete files",
@@ -167,6 +171,7 @@ function setLang(code){
   render();
 }
 const h=n=>{const u=["B","KB","MB","GB","TB"];let i=0;while(n>=1024&&i<4){n/=1024;i++}return n.toFixed(i?1:0)+" "+u[i]};
+const mb=n=>(n*8/1e6).toFixed(n*8/1e6>=100?0:1)+" Mb/s";
 const eta=s=>s<0?"—":s>=86400?Math.floor(s/86400)+"d "+Math.floor(s%86400/3600)+"h":Math.floor(s/3600)+"h "+String(Math.floor(s%3600/60)).padStart(2,"0")+"m";
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let tt;function toast(t,err){const e=$("toast");e.textContent=t;e.style.color=err?"var(--error)":"";e.classList.add("on");clearTimeout(tt);tt=setTimeout(()=>e.classList.remove("on"),3200)}
@@ -206,7 +211,8 @@ function render(){const d=last;navs(d.items);
     <button class="ib danger" title="${L.del}" onclick="act('${t.ih}','delete')"><i class="ico">&#xE74D;</i></button>
    </div></div>`}).join("")
    :`<div class="empty"><div><div class="big ico" style="width:auto">&#xE896;</div><div style="font-size:16px;color:var(--tx)">${L.emptyT}</div><div>${L.emptyS}</div></div></div>`;
-  $("sd").textContent=h(d.down||0)+"/s";$("su").textContent=h(d.up||0)+"/s";
+  $("sd").textContent=h(d.down||0)+"/s · "+mb(d.down||0)+(d.line_mbps?" / "+d.line_mbps+" Mb/s":"");
+  $("su").textContent=h(d.up||0)+"/s"+(d.up_cap?" ("+L.limit+" "+mb(d.up_cap)+")":"");
   $("sp").textContent=d.items.reduce((a,t)=>a+t.peers,0)+" "+L.peers;$("sf").textContent=d.out||"";
   document.title=d.down>0?`↓ ${h(d.down)}/s · TorrentFast`:"TorrentFast";}
 
@@ -236,11 +242,15 @@ document.addEventListener("drop",e=>{e.preventDefault();dz=0;$("drop").classList
 
 // ---------- configuración ----------
 async function loadCfg(){cfg=await (await fetch("/api/settings")).json();setLang(cfg.lang);$("lang").value=cfg.lang||"auto";
-  $("savePath").textContent=cfg.save;$("lanUrl").textContent=cfg.lan_url||L.lanOff;
+  $("savePath").textContent=cfg.save;$("lineMbps").value=cfg.line_mbps;$("upPct").value=String(Math.round(cfg.up_pct));
+  const cap=cfg.up_pct>=100?0:cfg.line_mbps*1e6/8*cfg.up_pct/100;
+  $("upCalc").textContent=cap?`${L.upTo} ${mb(cap)} (${h(cap)}/s)`:L.noLimit;$("lanUrl").textContent=cfg.lan_url||L.lanOff;
   $("lanBtn").textContent=cfg.lan?L.disable:L.enable;
   if(!!cfg.lan!==!!cfg.lan_active)$("lanUrl").textContent=L.lanRestart;
   $("assocRow").style.display=cfg.can_associate?"":"none";$("assocBtn").textContent=cfg.associated?L.enabled:L.enable;}
 $("setBtn").onclick=()=>{loadCfg();$("setDlg").classList.add("on")};
+$("lineMbps").onchange=async()=>{try{await api("/api/settings",{line_mbps:+$("lineMbps").value});loadCfg()}catch(e){toast(e.message,1)}};
+$("upPct").onchange=async()=>{await api("/api/settings",{up_pct:+$("upPct").value});loadCfg()};
 $("lang").onchange=async()=>{await api("/api/settings",{lang:$("lang").value});loadCfg()};
 $("lanBtn").onclick=async()=>{await api("/api/settings",{lan:!cfg.lan});loadCfg()};
 $("assocBtn").onclick=async()=>{try{await api("/api/associate");loadCfg();toast(L.enabled)}catch(e){toast(e.message,1)}};

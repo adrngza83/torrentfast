@@ -15,6 +15,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -48,17 +49,22 @@ jobs:
           Write-Host "Self-test OK"
 
       - name: Launch test (real window, single instance, magnet hand-off)
+        timeout-minutes: 4
         shell: pwsh
         run: |
           $p = Start-Process dist\TorrentFast.exe -PassThru
-          Start-Sleep 20
+          $file = "$env:APPDATA\TorrentFast\instance.json"
+          for ($i = 0; $i -lt 30 -and -not (Test-Path $file); $i++) { Start-Sleep 1 }
+          Start-Sleep 5
           if ($p.HasExited) { throw "App closed on startup (exit $($p.ExitCode))" }
-          $port = (Get-Content "$env:APPDATA\TorrentFast\instance.json" | ConvertFrom-Json).port
-          Start-Process dist\TorrentFast.exe -ArgumentList '"magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel"' -Wait
+          $port = (Get-Content $file | ConvertFrom-Json).port
+          $q = Start-Process dist\TorrentFast.exe -ArgumentList '"magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel"' -PassThru
+          if (-not $q.WaitForExit(30000)) { Stop-Process $q.Id -Force; Stop-Process $p.Id -Force; throw "Second instance did not hand off the magnet" }
           $s = Invoke-RestMethod "http://127.0.0.1:$port/api/status"
-          if ($s.items.Count -ne 1) { throw "Magnet was not handed to the running window" }
-          Write-Host "Window running on port $port with $($s.items.Count) torrent"
-          Stop-Process $p.Id
+          Stop-Process $p.Id -Force
+          if ($s.items.Count -ne 1) { throw "Magnet was not added to the running window" }
+          if ($s.up_cap -ne 3750000) { throw "Upload cap is $($s.up_cap), expected 3750000 (10% of 300 Mbps)" }
+          Write-Host "Window OK on port $port, magnet handed off, upload cap $($s.up_cap) B/s"
 
       - uses: actions/upload-artifact@v4
         with:

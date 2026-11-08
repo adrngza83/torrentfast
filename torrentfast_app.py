@@ -25,10 +25,15 @@ def running_instance():
     try:
         with open(PORT_FILE, encoding="utf-8") as f:
             port = json.load(f)["port"]
-        urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=1.5).read()
-        return port
     except Exception:
         return None
+    for _ in range(3):  # the open window may be busy for a moment
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3).read()
+            return port
+        except Exception:
+            time.sleep(0.5)
+    return None
 
 
 def send_to_instance(port, items):

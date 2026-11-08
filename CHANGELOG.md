@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-11-07
+### Added
+- Upload cap based on your line speed: set your internet speed (default 300 Mbps) and the share for uploading (default 10% = 30 Mbps). Download is never limited.
+- Status bar shows speeds in Mb/s next to your line speed and the upload limit.
+- CLI: `--line-mbps` and `--up-pct`.
+
+### Changed
+- High-bandwidth tuning for 300 Mbps+ connections: 64 MB disk queue, larger socket buffers, 4 hashing threads, protocol overhead no longer counted against limits.
+
+### Fixed
+- CI launch test could hang; it now has timeouts and the app retries when handing a magnet to an already-open window.
+
 ## [1.1.0] - 2026-11-07
 ### Added
 - Native desktop app (`TorrentFast.exe`): its own window with a Windows 11 Fluent design, light/dark theme and app icon.
@@ -27,5 +39,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Command-line version (`TorrentFast-CLI.exe`).
 - Automatic Windows `.exe` builds with GitHub Actions.
 
+[1.2.0]: https://github.com/adrngza83/torrentfast/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/adrngza83/torrentfast/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/adrngza83/torrentfast/releases/tag/v1.0.0

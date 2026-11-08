@@ -23,7 +23,7 @@ try:
 except ImportError:
     sys.exit("libtorrent is missing. Run:  pip install libtorrent")
 
-from torrentfast import EXTRA_TRACKERS, make_session
+from torrentfast import DEFAULT_LINE_MBPS, DEFAULT_UP_PCT, EXTRA_TRACKERS, make_session, upload_limit_bytes
 
 APP_NAME = "TorrentFast"
 LOCK = threading.RLock()
@@ -75,7 +75,8 @@ class Engine:
         self.dir = data_dir()
         self.settings_file = os.path.join(self.dir, "settings.json")
         self.sources_file = os.path.join(self.dir, "sources.json")
-        self.settings = {"lang": "auto", "save": default_save_dir()}
+        self.settings = {"lang": "auto", "save": default_save_dir(),
+                         "line_mbps": DEFAULT_LINE_MBPS, "up_pct": DEFAULT_UP_PCT}
         if os.path.exists(self.settings_file):
             try:
                 with open(self.settings_file, encoding="utf-8") as f:
@@ -86,6 +87,7 @@ class Engine:
             self.settings["save"] = args.out
         os.makedirs(self.settings["save"], exist_ok=True)
         self.ses = make_session(args)
+        self.apply_limits()
         self.sources = {}  # info_hash -> {"src": magnet or .torrent path, "save": folder}
         self.lan_url = None
         self._restore()
@@ -99,9 +101,25 @@ class Engine:
         os.replace(tmp, path)
 
     def save_settings(self, **kw):
+        for k in ("line_mbps", "up_pct"):
+            if kw.get(k) is not None:
+                v = float(kw[k])
+                if not 0 <= v <= (100 if k == "up_pct" else 100000):
+                    raise ValueError(f"Invalid {k}")
+                kw[k] = v
         self.settings.update({k: v for k, v in kw.items() if v is not None})
         os.makedirs(self.settings["save"], exist_ok=True)
         self._write_json(self.settings_file, self.settings)
+        self.apply_limits()
+
+    def upload_cap(self):
+        if getattr(self.args, "max_up", 0):
+            return self.args.max_up * 1024
+        return upload_limit_bytes(self.settings.get("line_mbps"), self.settings.get("up_pct"))
+
+    def apply_limits(self):
+        down = getattr(self.args, "max_down", 0) * 1024
+        self.ses.apply_settings({"upload_rate_limit": self.upload_cap(), "download_rate_limit": down})
 
     def _restore(self):
         if not os.path.exists(self.sources_file):
@@ -264,7 +282,8 @@ class Engine:
             })
         items.sort(key=lambda x: x["name"].lower())
         return {"items": items, "down": down, "up": up, "out": self.settings["save"],
-                "port": self.ses.listen_port()}
+                "port": self.ses.listen_port(), "up_cap": self.upload_cap(),
+                "line_mbps": self.settings.get("line_mbps")}
 
     # ---------- Windows file associations ----------
     def associate(self):
@@ -344,7 +363,8 @@ def make_handler(engine):
                     open_path(engine.settings["save"])
                     self._json({"ok": True})
                 elif u.path == "/api/settings":
-                    engine.save_settings(lang=data.get("lang"), save=data.get("save"), lan=data.get("lan"))
+                    engine.save_settings(lang=data.get("lang"), save=data.get("save"), lan=data.get("lan"),
+                                         line_mbps=data.get("line_mbps"), up_pct=data.get("up_pct"))
                     self._json({"ok": True})
                 elif u.path == "/api/associate":
                     engine.associate()
@@ -377,7 +397,7 @@ def add_common_args(ap):
     ap.add_argument("--web-port", type=int, default=8800)
     ap.add_argument("--lan", action="store_true", help="allow access from other devices on your network")
     ap.add_argument("--max-down", type=int, default=0, help="KB/s, 0 = unlimited")
-    ap.add_argument("--max-up", type=int, default=0, help="KB/s, 0 = unlimited")
+    ap.add_argument("--max-up", type=int, default=0, help="KB/s, overrides the upload percentage")
 
 
 def main():
