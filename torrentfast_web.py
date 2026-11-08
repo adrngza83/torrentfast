@@ -377,12 +377,23 @@ def make_handler(engine):
     return Handler
 
 
+class ApiServer(ThreadingHTTPServer):
+    daemon_threads = True
+    # On Windows SO_REUSEADDR lets two processes share a port; refuse that.
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self):
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def start_server(engine, host="127.0.0.1", port=8800):
     """Start the API in a background thread. Falls back to a free port if taken."""
     try:
-        srv = ThreadingHTTPServer((host, port), make_handler(engine))
+        srv = ApiServer((host, port), make_handler(engine))
     except OSError:
-        srv = ThreadingHTTPServer((host, 0), make_handler(engine))
+        srv = ApiServer((host, 0), make_handler(engine))
     port = srv.server_address[1]
     if host == "0.0.0.0":
         ip = lan_ip()

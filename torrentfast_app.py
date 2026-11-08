@@ -67,11 +67,11 @@ class JsApi:
     """Functions the page can call through window.pywebview.api."""
 
     def __init__(self):
-        self.window = None
+        self._window = None  # underscore: pywebview must not expose/inspect it
 
     def choose_folder(self):
         import webview
-        res = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+        res = self._window.create_file_dialog(webview.FOLDER_DIALOG)
         return res[0] if res else None
 
 
@@ -127,7 +127,7 @@ def main():
         width=1180, height=760, min_size=(760, 480), background_color="#202020",
         text_select=False,
     )
-    api.window = window
+    api._window = window
     try:
         webview.start(private_mode=False, storage_path=os.path.join(data_dir(), "webview"))
     finally:
