@@ -1,11 +1,13 @@
-# Cómo contribuir
+# Contributing
 
-¡Gracias por tu interés! 
+Thanks for your interest in TorrentFast!
 
-1. Haz un fork y crea una rama: `git checkout -b mejora/lo-que-sea`
-2. Instala dependencias: `pip install -r requirements.txt`
-3. Prueba tu cambio: `python torrentfast_web.py` y abre `http://localhost:8800`
-4. Abre un Pull Request explicando qué cambia y por qué. GitHub Actions compila y prueba el `.exe` automáticamente.
+1. Fork the repo and create a branch: `git checkout -b feature/my-change`
+2. Install dependencies: `pip install -r requirements.txt`
+3. Run it: `python torrentfast_app.py` (desktop) or `python torrentfast_web.py` (browser)
+4. Quick check: `python torrentfast_app.py --selftest` must print `SELFTEST OK`
+5. Open a pull request explaining what changed and why. GitHub Actions builds the `.exe` and launches it on Windows.
 
-**Estilo:** Python 3.12, PEP 8, textos de la interfaz en español.
-**Colores de estado** (no cambiar su significado): azul = descargando, amarillo = buscando, verde = listo, gris = pausado, rojo = error.
+**Style:** Python 3.12, PEP 8. Every user-facing string goes in both languages in `ui/index.html` (`I18N.es` and `I18N.en`).
+
+**Status colors** (keep their meaning consistent): blue = downloading, yellow = fetching metadata, green = completed, gray = paused, red = error.

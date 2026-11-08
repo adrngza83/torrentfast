@@ -1,62 +1,128 @@
 #!/usr/bin/env python3
 """
-TorrentFast Web — interfaz web con colores para TorrentFast.
-Abre http://localhost:8800 (o http://IP-de-tu-PC:8800 desde el celular en tu WiFi).
+TorrentFast engine + local HTTP API, shared by the native app and the browser mode.
 
-  python torrentfast_web.py                 (descarga en ~/Downloads/TorrentFast)
-  python torrentfast_web.py -o D:/Descargas --web-port 8800
+Browser mode:
+  python torrentfast_web.py              -> http://localhost:8800
+  python torrentfast_web.py --lan        -> also reachable from your phone on the same Wi-Fi
 """
 import argparse
 import json
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 try:
     import libtorrent as lt
 except ImportError:
-    sys.exit("Falta libtorrent. Corre instalar.bat o:  pip install libtorrent")
+    sys.exit("libtorrent is missing. Run:  pip install libtorrent")
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from torrentfast import EXTRA_TRACKERS, STATES, make_session, resume_path  # noqa: E402
+from torrentfast import EXTRA_TRACKERS, make_session
 
-LOCK = threading.Lock()
+APP_NAME = "TorrentFast"
+LOCK = threading.RLock()
+
+
+def resource(*parts):
+    """Path to a bundled file (works from source and from a PyInstaller .exe)."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *parts)
+
+
+def data_dir():
+    if os.name == "nt":
+        d = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
+    else:
+        d = os.path.join(os.path.expanduser("~"), ".config", "torrentfast")
+    os.makedirs(os.path.join(d, "resume"), exist_ok=True)
+    os.makedirs(os.path.join(d, "torrents"), exist_ok=True)
+    return d
+
+
+def default_save_dir():
+    return os.path.join(os.path.expanduser("~"), "Downloads", APP_NAME)
+
+
+def open_path(path):
+    if os.name == "nt":
+        os.startfile(path)  # noqa: S606 - opens Explorer on the user's own folder
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
+
+
+def lan_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return None
 
 
 class Engine:
     def __init__(self, args):
         self.args = args
-        self.save = args.out
-        os.makedirs(self.save, exist_ok=True)
+        self.dir = data_dir()
+        self.settings_file = os.path.join(self.dir, "settings.json")
+        self.sources_file = os.path.join(self.dir, "sources.json")
+        self.settings = {"lang": "auto", "save": default_save_dir()}
+        if os.path.exists(self.settings_file):
+            try:
+                with open(self.settings_file, encoding="utf-8") as f:
+                    self.settings.update(json.load(f))
+            except (OSError, ValueError):
+                pass
+        if getattr(args, "out", None):
+            self.settings["save"] = args.out
+        os.makedirs(self.settings["save"], exist_ok=True)
         self.ses = make_session(args)
-        self.sources_file = os.path.join(self.save, ".torrentfast", "sources.json")
-        os.makedirs(os.path.dirname(self.sources_file), exist_ok=True)
-        self.sources = {}  # info_hash -> magnet o ruta .torrent
+        self.sources = {}  # info_hash -> {"src": magnet or .torrent path, "save": folder}
+        self.lan_url = None
         self._restore()
         threading.Thread(target=self._autosave, daemon=True).start()
 
-    # ---------- persistencia ----------
+    # ---------- persistence ----------
+    def _write_json(self, path, obj):
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(obj, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, path)
+
+    def save_settings(self, **kw):
+        self.settings.update({k: v for k, v in kw.items() if v is not None})
+        os.makedirs(self.settings["save"], exist_ok=True)
+        self._write_json(self.settings_file, self.settings)
+
     def _restore(self):
-        if os.path.exists(self.sources_file):
+        if not os.path.exists(self.sources_file):
+            return
+        try:
+            with open(self.sources_file, encoding="utf-8") as f:
+                saved = json.load(f)
+        except (OSError, ValueError):
+            return
+        for entry in saved.values():
             try:
-                with open(self.sources_file, encoding="utf-8") as f:
-                    saved = json.load(f)
-                for src in saved.values():
-                    try:
-                        self.add(src, persist=False)
-                    except Exception as e:
-                        print("No se pudo restaurar:", e)
-            except Exception:
-                pass
+                self.add(entry["src"], save=entry.get("save"), persist=False)
+            except Exception as e:  # keep going if one entry is broken
+                print("Could not restore:", e)
+        self._persist()
 
     def _persist(self):
-        with open(self.sources_file, "w", encoding="utf-8") as f:
-            json.dump(self.sources, f)
+        self._write_json(self.sources_file, self.sources)
+
+    def _resume_path(self, ih):
+        return os.path.join(self.dir, "resume", f"{ih}.fastresume")
 
     def _autosave(self):
         while True:
@@ -74,42 +140,48 @@ class Engine:
             for a in self.ses.pop_alerts():
                 if isinstance(a, lt.save_resume_data_alert):
                     ih = str(a.handle.info_hashes().get_best())
-                    with open(resume_path(self.save, ih), "wb") as f:
+                    with open(self._resume_path(ih), "wb") as f:
                         f.write(lt.write_resume_data_buf(a.params))
                     pending -= 1
                 elif isinstance(a, lt.save_resume_data_failed_alert):
                     pending -= 1
 
-    # ---------- acciones ----------
-    def add(self, src, persist=True, torrent_bytes=None, filename=None):
+    def shutdown(self):
+        self.ses.pause()
+        self.save_resume()
+
+    # ---------- actions ----------
+    def add(self, src, save=None, persist=True, torrent_bytes=None, filename=None):
         src = (src or "").strip()
         if torrent_bytes is not None:
-            tdir = os.path.join(self.save, ".torrentfast", "torrents")
-            os.makedirs(tdir, exist_ok=True)
-            path = os.path.join(tdir, os.path.basename(filename or "subido.torrent"))
-            with open(path, "wb") as f:
+            name = os.path.basename(filename or "upload.torrent")
+            lt.torrent_info(lt.bdecode(torrent_bytes))  # validate before saving
+            src = os.path.join(self.dir, "torrents", name)
+            with open(src, "wb") as f:
                 f.write(torrent_bytes)
-            src = path
         if src.startswith("magnet:"):
             p = lt.parse_magnet_uri(src)
-        elif os.path.isfile(src):
+        elif src.lower().endswith(".torrent") and os.path.isfile(src):
             p = lt.add_torrent_params()
             p.ti = lt.torrent_info(src)
         else:
-            raise ValueError("Pega un enlace magnet o sube un archivo .torrent")
+            raise ValueError("Not a magnet link or .torrent file")
         ih = str(p.info_hashes.get_best())
-        rp = resume_path(self.save, ih)
+        if ih in self.sources and self.find(ih):
+            return ih  # already in the list
+        save = save or self.settings["save"]
+        rp = self._resume_path(ih)
         if os.path.exists(rp):
             with open(rp, "rb") as f:
                 old = lt.read_resume_data(f.read())
             if p.ti is not None and old.ti is None:
                 old.ti = p.ti
             p = old
-        p.save_path = self.save
+        p.save_path = save
         p.trackers = list(p.trackers) + [t for t in EXTRA_TRACKERS if t not in p.trackers]
         with LOCK:
             self.ses.add_torrent(p)
-            self.sources[ih] = src
+            self.sources[ih] = {"src": src, "save": save}
             if persist:
                 self._persist()
         return ih
@@ -123,7 +195,7 @@ class Engine:
     def action(self, ih, act):
         h = self.find(ih)
         if not h:
-            raise ValueError("No existe ese torrent")
+            raise ValueError("Torrent not found")
         with LOCK:
             if act == "pause":
                 h.unset_flags(lt.torrent_flags.auto_managed)
@@ -136,16 +208,23 @@ class Engine:
                     h.unset_flags(lt.torrent_flags.sequential_download)
                 else:
                     h.set_flags(lt.torrent_flags.sequential_download)
+            elif act == "open":
+                st = h.status()
+                target = os.path.join(st.save_path, st.name) if st.name else st.save_path
+                open_path(target if os.path.exists(target) else st.save_path)
             elif act in ("remove", "delete"):
-                opt = lt.session.delete_files if act == "delete" else 0
-                self.ses.remove_torrent(h, opt)
+                self.ses.remove_torrent(h, lt.session.delete_files if act == "delete" else 0)
                 self.sources.pop(ih, None)
                 self._persist()
-                rp = resume_path(self.save, ih)
+                rp = self._resume_path(ih)
                 if os.path.exists(rp):
                     os.remove(rp)
             else:
-                raise ValueError("Acción desconocida")
+                raise ValueError("Unknown action")
+
+    def bulk(self, act):
+        for h in self.ses.get_torrents():
+            self.action(str(h.info_hashes().get_best()), act)
 
     def status(self):
         items, down, up = [], 0, 0
@@ -153,7 +232,7 @@ class Engine:
             st = h.status()
             down += st.download_payload_rate
             up += st.upload_payload_rate
-            paused = bool(st.flags & lt.torrent_flags.paused)
+            paused = bool(st.flags & lt.torrent_flags.paused) and not bool(st.flags & lt.torrent_flags.auto_managed)
             if paused:
                 kind = "paused"
             elif st.errc.value():
@@ -169,191 +248,155 @@ class Engine:
             rem = st.total_wanted - st.total_wanted_done
             items.append({
                 "ih": str(h.info_hashes().get_best()),
-                "name": st.name or "Obteniendo metadatos…",
+                "name": st.name or "…",
                 "progress": st.progress,
                 "down": st.download_payload_rate,
                 "up": st.upload_payload_rate,
                 "peers": st.num_peers,
                 "seeds": st.num_seeds,
                 "size": st.total_wanted,
-                "done": st.total_wanted_done,
                 "eta": int(rem / st.download_payload_rate) if st.download_payload_rate > 0 else -1,
-                "state": "pausado" if paused else (STATES[st.state] if st.state < len(STATES) else "?"),
+                "state": int(st.state),
+                "paused": paused,
                 "kind": kind,
                 "seq": bool(h.flags() & lt.torrent_flags.sequential_download),
                 "error": st.errc.message() if st.errc.value() else "",
             })
         items.sort(key=lambda x: x["name"].lower())
-        return {"items": items, "down": down, "up": up, "out": self.save,
+        return {"items": items, "down": down, "up": up, "out": self.settings["save"],
                 "port": self.ses.listen_port()}
 
-
-PAGE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TorrentFast</title>
-<style>
-:root{--bg:#0f1115;--card:#181b22;--line:#262a33;--tx:#e8eaf0;--mut:#8a90a0;
---down:#38bdf8;--done:#22c55e;--meta:#facc15;--paused:#94a3b8;--error:#ef4444;--check:#a78bfa}
-*{box-sizing:border-box}body{margin:0;font:15px/1.4 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
-header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
-h1{margin:0;font-size:20px}h1 b{color:var(--down)}
-.tot{display:flex;gap:16px;font-variant-numeric:tabular-nums}.tot span{font-weight:600}
-.dn{color:var(--down)}.upc{color:var(--done)}
-main{max-width:1000px;margin:0 auto;padding:16px}
-form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-input[type=text]{flex:1;min-width:220px;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--tx);font-size:15px}
-button,.filebtn{padding:11px 16px;border-radius:10px;border:0;font-weight:600;cursor:pointer;background:var(--down);color:#00131d;font-size:14px}
-.filebtn{background:var(--card);color:var(--tx);border:1px solid var(--line)}
-.filters{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 14px}
-.chip{padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--mut);font-weight:500}
-.chip.on{color:var(--tx);border-color:var(--tx)}
-.chip i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
-.t{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:12px;padding:12px 14px;margin-bottom:10px}
-.row{display:flex;justify-content:space-between;gap:10px;align-items:center}
-.name{font-weight:600;word-break:break-all}
-.badge{font-size:12px;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--c) 18%,transparent);color:var(--c);white-space:nowrap}
-.bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin:10px 0 8px}
-.bar div{height:100%;background:var(--c);transition:width .6s}
-.meta{display:flex;flex-wrap:wrap;gap:14px;color:var(--mut);font-size:13px;font-variant-numeric:tabular-nums}
-.meta b{color:var(--tx);font-weight:600}
-.acts{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
-.acts button{background:transparent;color:var(--mut);border:1px solid var(--line);padding:6px 10px;font-weight:500}
-.acts button:hover{color:var(--tx);border-color:var(--tx)}
-.acts .del:hover{color:var(--error);border-color:var(--error)}
-.acts .on{color:var(--down);border-color:var(--down)}
-.empty{color:var(--mut);text-align:center;padding:40px}
-.foot{color:var(--mut);font-size:12px;margin-top:16px}
-#msg{min-height:20px;font-size:13px;margin-bottom:6px}
-body.focus .t:not([data-k=down]):not([data-k=meta]){display:none}
-</style></head><body>
-<header><h1>Torrent<b>Fast</b></h1>
-<div class="tot"><div>↓ <span class="dn" id="td">0</span></div><div>↑ <span class="upc" id="tu">0</span></div></div></header>
-<main>
-<form id="f"><input type="text" id="mag" placeholder="Pega un enlace magnet:?xt=…" autocomplete="off">
-<button>Descargar</button>
-<label class="filebtn">.torrent<input type="file" id="file" accept=".torrent" multiple hidden></label></form>
-<div id="msg"></div>
-<div class="filters" id="fl"></div>
-<div id="list"></div>
-<div class="foot" id="foot"></div>
-</main>
-<script>
-const COL={down:'var(--down)',done:'var(--done)',meta:'var(--meta)',paused:'var(--paused)',error:'var(--error)',check:'var(--check)'};
-const LBL={all:'Todos',down:'Descargando',meta:'Buscando',done:'Listos',paused:'Pausados',error:'Error',focus:'Modo enfoque'};
-let filt='all',focus=false;
-const h=n=>{const u=['B','KB','MB','GB','TB'];let i=0;while(n>=1024&&i<4){n/=1024;i++}return n.toFixed(i?1:0)+' '+u[i]};
-const eta=s=>s<0?'—':`${Math.floor(s/3600)}h ${String(Math.floor(s%3600/60)).padStart(2,'0')}m`;
-const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.style.color=ok?'var(--done)':'var(--error)';setTimeout(()=>m.textContent='',4000)}
-async function api(p,b){const r=await fetch(p,{method:'POST',body:b});const j=await r.json();if(!r.ok)throw new Error(j.error);return j}
-document.getElementById('f').onsubmit=async e=>{e.preventDefault();const v=mag.value.trim();if(!v)return;
- try{await api('/api/add',JSON.stringify({src:v}));mag.value='';msg('Agregado ✓',1);tick()}catch(x){msg(x.message)}};
-file.onchange=async()=>{for(const f of file.files){try{await fetch('/api/upload?name='+encodeURIComponent(f.name),{method:'POST',body:f}).then(async r=>{if(!r.ok)throw new Error((await r.json()).error)});msg('Agregado ✓',1)}catch(x){msg(x.message)}}file.value='';tick()};
-async function act(ih,a){if(a==='delete'&&!confirmDel(ih))return;try{await api('/api/action',JSON.stringify({ih,act:a}));tick()}catch(x){msg(x.message)}}
-const armed={};function confirmDel(ih){if(armed[ih]){delete armed[ih];return true}armed[ih]=1;msg('Toca "Borrar archivos" otra vez para confirmar');setTimeout(()=>delete armed[ih],4000);return false}
-function filters(items){const c={all:items.length};items.forEach(t=>c[t.kind]=(c[t.kind]||0)+1);
- fl.innerHTML=['all','down','meta','done','paused','error'].filter(k=>k==='all'||c[k]).map(k=>`<button class="chip ${filt===k?'on':''}" onclick="filt='${k}';tick()">${k!=='all'?`<i style="background:${COL[k]}"></i>`:''}${LBL[k]} ${c[k]||0}</button>`).join('')+
- `<button class="chip ${focus?'on':''}" onclick="focus=!focus;document.body.classList.toggle('focus',focus);tick()">◎ ${LBL.focus}</button>`}
-async function tick(){try{const d=await (await fetch('/api/status')).json();
- td.textContent=h(d.down)+'/s';tu.textContent=h(d.up)+'/s';document.title=`↓${h(d.down)}/s · TorrentFast`;
- filters(d.items);const it=d.items.filter(t=>filt==='all'||t.kind===filt);
- list.innerHTML=it.length?it.map(t=>`<div class="t" data-k="${t.kind}" style="--c:${COL[t.kind]}">
- <div class="row"><div class="name">${esc(t.name)}</div><span class="badge">${t.state}</span></div>
- <div class="bar"><div style="width:${(t.progress*100).toFixed(1)}%"></div></div>
- <div class="meta"><span><b>${(t.progress*100).toFixed(1)}%</b> de ${h(t.size)}</span><span>↓ <b>${h(t.down)}/s</b></span><span>↑ ${h(t.up)}/s</span>
- <span>peers <b>${t.peers}</b> (${t.seeds} seeds)</span><span>ETA <b>${eta(t.eta)}</b></span>${t.error?`<span style="color:var(--error)">${esc(t.error)}</span>`:''}</div>
- <div class="acts">${t.kind==='paused'?`<button onclick="act('${t.ih}','resume')">▶ Reanudar</button>`:`<button onclick="act('${t.ih}','pause')">⏸ Pausar</button>`}
- <button class="${t.seq?'on':''}" onclick="act('${t.ih}','seq')">▤ Secuencial</button>
- <button onclick="act('${t.ih}','remove')">Quitar</button><button class="del" onclick="act('${t.ih}','delete')">🗑 Borrar archivos</button></div></div>`).join('')
- :'<div class="empty">Nada por aquí. Pega un magnet arriba.</div>';
- foot.textContent=`Guardando en ${d.out} · puerto P2P ${d.port}`}catch(e){foot.textContent='Sin conexión con TorrentFast…'}}
-tick();setInterval(tick,1000);
-</script></body></html>"""
+    # ---------- Windows file associations ----------
+    def associate(self):
+        if os.name != "nt":
+            raise ValueError("Only available on Windows")
+        import winreg
+        exe = sys.executable if getattr(sys, "frozen", False) else f'{sys.executable}" "{os.path.abspath(sys.argv[0])}'
+        cmd = f'"{exe}" "%1"'
+        base = r"Software\Classes"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\magnet") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "URL:Magnet Link")
+            winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\magnet\DefaultIcon") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, f'"{sys.executable}",0')
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\magnet\shell\open\command") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, cmd)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\.torrent") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "TorrentFast.torrent")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\TorrentFast.torrent\shell\open\command") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, cmd)
+        self.save_settings(associated=True)
 
 
 def make_handler(engine):
-    class H(BaseHTTPRequestHandler):
+    page_path = resource("ui", "index.html")
+
+    class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
 
-        def _json(self, obj, code=200):
-            b = json.dumps(obj).encode()
+        def _send(self, code, body, ctype):
             self.send_response(code)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(b)))
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            self.wfile.write(b)
+            self.wfile.write(body)
+
+        def _json(self, obj, code=200):
+            self._send(code, json.dumps(obj).encode(), "application/json")
 
         def do_GET(self):
             path = urlparse(self.path).path
             if path == "/":
-                b = PAGE.encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(b)))
-                self.end_headers()
-                self.wfile.write(b)
+                with open(page_path, "rb") as f:
+                    self._send(200, f.read(), "text/html; charset=utf-8")
             elif path == "/api/status":
                 self._json(engine.status())
+            elif path == "/api/settings":
+                s = dict(engine.settings)
+                s.update(lan_url=engine.lan_url, lan_active=bool(engine.lan_url), can_associate=os.name == "nt",
+                         associated=bool(s.get("associated")))
+                self._json(s)
             else:
-                self._json({"error": "no encontrado"}, 404)
+                self._json({"error": "not found"}, 404)
 
         def do_POST(self):
             u = urlparse(self.path)
             n = int(self.headers.get("Content-Length") or 0)
+            if n > 20 * 1024 * 1024:
+                return self._json({"error": "too large"}, 413)
             body = self.rfile.read(n) if n else b""
             try:
+                data = json.loads(body) if body and u.path != "/api/upload" else {}
                 if u.path == "/api/add":
-                    self._json({"ih": engine.add(json.loads(body)["src"])})
+                    self._json({"ih": engine.add(data.get("src"))})
                 elif u.path == "/api/upload":
-                    from urllib.parse import parse_qs
-                    name = parse_qs(u.query).get("name", ["subido.torrent"])[0]
+                    name = parse_qs(u.query).get("name", ["upload.torrent"])[0]
                     self._json({"ih": engine.add("", torrent_bytes=body, filename=name)})
                 elif u.path == "/api/action":
-                    d = json.loads(body)
-                    engine.action(d["ih"], d["act"])
+                    engine.action(data["ih"], data["act"])
+                    self._json({"ok": True})
+                elif u.path == "/api/bulk":
+                    engine.bulk(data["act"])
+                    self._json({"ok": True})
+                elif u.path == "/api/open_folder":
+                    open_path(engine.settings["save"])
+                    self._json({"ok": True})
+                elif u.path == "/api/settings":
+                    engine.save_settings(lang=data.get("lang"), save=data.get("save"), lan=data.get("lan"))
+                    self._json({"ok": True})
+                elif u.path == "/api/associate":
+                    engine.associate()
                     self._json({"ok": True})
                 else:
-                    self._json({"error": "no encontrado"}, 404)
+                    self._json({"error": "not found"}, 404)
             except Exception as e:
                 self._json({"error": str(e)}, 400)
-    return H
+
+    return Handler
 
 
-def lan_ip():
+def start_server(engine, host="127.0.0.1", port=8800):
+    """Start the API in a background thread. Falls back to a free port if taken."""
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "IP-de-tu-PC"
+        srv = ThreadingHTTPServer((host, port), make_handler(engine))
+    except OSError:
+        srv = ThreadingHTTPServer((host, 0), make_handler(engine))
+    port = srv.server_address[1]
+    if host == "0.0.0.0":
+        ip = lan_ip()
+        engine.lan_url = f"http://{ip}:{port}" if ip else None
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, port
+
+
+def add_common_args(ap):
+    ap.add_argument("-o", "--out", help="download folder")
+    ap.add_argument("--port", type=int, default=6881, help="P2P listen port")
+    ap.add_argument("--web-port", type=int, default=8800)
+    ap.add_argument("--lan", action="store_true", help="allow access from other devices on your network")
+    ap.add_argument("--max-down", type=int, default=0, help="KB/s, 0 = unlimited")
+    ap.add_argument("--max-up", type=int, default=0, help="KB/s, 0 = unlimited")
 
 
 def main():
-    ap = argparse.ArgumentParser(description="TorrentFast Web")
-    ap.add_argument("-o", "--out", default=os.path.join(os.path.expanduser("~"), "Downloads", "TorrentFast"))
-    ap.add_argument("--port", type=int, default=6881, help="puerto P2P")
-    ap.add_argument("--web-port", type=int, default=8800)
-    ap.add_argument("--max-down", type=int, default=0)
-    ap.add_argument("--max-up", type=int, default=0)
+    ap = argparse.ArgumentParser(description="TorrentFast (browser mode)")
+    add_common_args(ap)
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args()
-
     engine = Engine(args)
-    srv = ThreadingHTTPServer(("0.0.0.0", args.web_port), make_handler(engine))
-    url = f"http://localhost:{args.web_port}"
-    print(f"TorrentFast Web listo:\n  En esta PC:  {url}\n  En tu cel:   http://{lan_ip()}:{args.web_port}  (misma WiFi)")
-    print(f"  Descargas en: {args.out}\nCtrl+C para cerrar (guarda el avance).")
+    _, port = start_server(engine, "0.0.0.0" if (args.lan or engine.settings.get("lan")) else "127.0.0.1", args.web_port)
+    url = f"http://localhost:{port}"
+    print(f"TorrentFast running at {url}" + (f"  (phone: {engine.lan_url})" if engine.lan_url else ""))
     if not args.no_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     try:
-        srv.serve_forever()
+        while True:
+            time.sleep(1)
     except KeyboardInterrupt:
-        print("\nGuardando avance…")
-        engine.ses.pause()
-        engine.save_resume()
+        print("\nSaving progress…")
+        engine.shutdown()
 
 
 if __name__ == "__main__":

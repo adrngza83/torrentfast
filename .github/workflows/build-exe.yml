@@ -1,4 +1,4 @@
-name: Compilar TorrentFast.exe
+name: Build
 
 on:
   push:
@@ -13,42 +13,61 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Instalar dependencias
+          cache: pip
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
-      - name: Probar que libtorrent carga
-        run: python -c "import libtorrent as lt; print(lt.__version__)"
-      - name: Compilar .exe
-        run: |
-          pyinstaller --onefile --name TorrentFast --collect-all libtorrent --hidden-import torrentfast torrentfast_web.py
-          pyinstaller --onefile --name TorrentFast-CLI --collect-all libtorrent torrentfast.py
-      - name: Probar el .exe
+
+      - name: Build TorrentFast.exe (desktop app)
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name TorrentFast
+          --icon assets/icon.ico --version-file version_info.txt
+          --add-data "ui;ui" --collect-all libtorrent --collect-all webview
+          --hidden-import clr torrentfast_app.py
+
+      - name: Build TorrentFast-CLI.exe (command line)
+        run: >
+          pyinstaller --noconfirm --onefile --console --name TorrentFast-CLI
+          --icon assets/icon.ico --collect-all libtorrent torrentfast.py
+
+      - name: Self-test (engine + UI bundled)
         shell: pwsh
         run: |
-          $p = Start-Process dist\TorrentFast.exe -ArgumentList "--no-browser","-o","$env:RUNNER_TEMP\tf" -PassThru
-          Start-Sleep 8
-          $r = Invoke-RestMethod http://localhost:8800/api/status
-          Write-Host "OK: puerto P2P $($r.port)"
+          $p = Start-Process dist\TorrentFast.exe -ArgumentList "--selftest" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Self-test failed ($($p.ExitCode))" }
+          Write-Host "Self-test OK"
+
+      - name: Launch test (real window, single instance, magnet hand-off)
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\TorrentFast.exe -PassThru
+          Start-Sleep 20
+          if ($p.HasExited) { throw "App closed on startup (exit $($p.ExitCode))" }
+          $port = (Get-Content "$env:APPDATA\TorrentFast\instance.json" | ConvertFrom-Json).port
+          Start-Process dist\TorrentFast.exe -ArgumentList '"magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel"' -Wait
+          $s = Invoke-RestMethod "http://127.0.0.1:$port/api/status"
+          if ($s.items.Count -ne 1) { throw "Magnet was not handed to the running window" }
+          Write-Host "Window running on port $port with $($s.items.Count) torrent"
           Stop-Process $p.Id
+
       - uses: actions/upload-artifact@v4
         with:
           name: TorrentFast-windows
           path: dist/*.exe
-      - name: Publicar versión
+
+      - name: Attach to release
         if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name || github.ref_name }}
-          name: TorrentFast ${{ github.event.release.tag_name || github.ref_name }}
-          body: |
-            Descarga **TorrentFast.exe**, dale doble clic y se abre en tu navegador (http://localhost:8800).
-            `TorrentFast-CLI.exe` es la versión de terminal.
           files: dist/*.exe

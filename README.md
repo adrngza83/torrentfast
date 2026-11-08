@@ -1,67 +1,88 @@
-# ⚡ TorrentFast
+<p align="center"><img src="assets/icon.png" width="96" alt="TorrentFast icon"></p>
 
-[![Compilación](https://github.com/adrngza83/torrentfast/actions/workflows/build-exe.yml/badge.svg)](https://github.com/adrngza83/torrentfast/actions/workflows/build-exe.yml)
-[![Última versión](https://img.shields.io/github/v/release/adrngza83/torrentfast)](https://github.com/adrngza83/torrentfast/releases/latest)
-[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-green.svg)](LICENSE)
-![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6)
-![Python](https://img.shields.io/badge/python-3.12-3776AB)
+<h1 align="center">TorrentFast</h1>
 
-Descargador de torrents **rápido**, con interfaz web de colores que también funciona desde el celular.
-Creado por **Adrián Garza Garza** ([@adrngza83](https://github.com/adrngza83)).
+<p align="center">
+A fast, native-looking torrent downloader for Windows.<br>
+Created by <b>Adrián Garza Garza</b> (<a href="https://github.com/adrngza83">@adrngza83</a>)
+</p>
 
-## Descargar
+<p align="center">
+<a href="https://github.com/adrngza83/torrentfast/actions/workflows/build-exe.yml"><img src="https://github.com/adrngza83/torrentfast/actions/workflows/build-exe.yml/badge.svg" alt="Build"></a>
+<a href="https://github.com/adrngza83/torrentfast/releases/latest"><img src="https://img.shields.io/github/v/release/adrngza83/torrentfast" alt="Latest release"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
+<img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6" alt="Windows 10 | 11">
+</p>
 
-👉 Ve a [**Releases**](../../releases/latest), baja **`TorrentFast.exe`** y dale doble clic. No necesitas instalar nada.
-Se abre solo en tu navegador en `http://localhost:8800`.
+<p align="center"><b>English</b> · <a href="README.es.md">Español</a></p>
 
-> La primera vez, Windows puede mostrar "Windows protegió tu PC" porque el .exe no está firmado: da clic en *Más información → Ejecutar de todas formas*. También acepta el aviso del firewall para que lleguen más peers.
+---
 
-## Qué tiene
+## Download
 
-- 🎨 **Colores por estado**: 🔵 descargando · 🟡 buscando datos · 🟢 listo · ⚪ pausado · 🔴 error
-- 🎯 **Modo enfoque**: oculta lo que ya terminó
-- 📱 **Desde el celular**: entra a `http://IP-de-tu-PC:8800` estando en la misma WiFi
-- 🧲 Enlaces magnet y archivos `.torrent` (puedes subir varios)
-- ▤ **Descarga secuencial** para ver un video mientras se descarga
-- ⏯ Pausar y reanudar; si cierras el programa, sigue donde se quedó
+1. Go to [**Releases**](https://github.com/adrngza83/torrentfast/releases/latest) and download **`TorrentFast.exe`**.
+2. Double-click it. No installation needed.
 
-## Por qué es rápido
+> **First run:** Windows SmartScreen may say *"Windows protected your PC"* because the app isn't code-signed yet. Click **More info → Run anyway**. When the firewall asks, allow **private networks** so more peers can reach you.
 
-Usa [libtorrent](https://libtorrent.org) (el motor de qBittorrent y Deluge) con ajustes agresivos:
-- Hasta 2000 conexiones y 200 conexiones nuevas por segundo
-- Muchas peticiones simultáneas a cada peer
-- DHT, descubrimiento en red local y 10 trackers públicos extra para encontrar peers rápido
-- Abre el puerto del router solo (UPnP/NAT-PMP)
-- Cifrado activado para evitar que tu proveedor de internet frene las descargas
+## Features
 
-**Tip:** abre el puerto **6881 (TCP y UDP)** en tu router si UPnP no funciona; es lo que más sube la velocidad.
+- 🪟 **Native Windows 11 look**: its own window, light/dark theme that follows Windows, Fluent icons
+- 🎨 **Color-coded status**: 🔵 downloading · 🟡 fetching metadata · 🟢 completed · ⚪ paused · 🔴 error
+- 🎯 **Focus mode** hides finished and paused items
+- 📋 **Paste a magnet with Ctrl+V** anywhere in the window, or **drag & drop `.torrent` files**
+- 🧲 **Open magnet links with TorrentFast**: one click in Settings and every magnet you click in your browser goes straight to the app
+- ▶️ **Sequential download** to watch a video while it downloads
+- ⏯ Pause/resume everything; downloads continue where they left off after a restart
+- 📱 **Phone access** (optional): control it from any device on your Wi-Fi
+- 🌐 Spanish and English, automatic by system language
 
-## Versión de terminal
+## Why it's fast
+
+Built on [libtorrent](https://libtorrent.org) (the engine behind qBittorrent and Deluge), tuned aggressively:
+
+- Up to 2,000 connections, 200 new connections per second
+- Deep request queues per peer
+- DHT, local peer discovery and 10 extra public trackers to find peers quickly
+- Automatic router port mapping (UPnP / NAT-PMP)
+- Protocol encryption to avoid ISP throttling
+
+**Tip:** if UPnP doesn't work on your router, forward port **6881 (TCP and UDP)** manually. It's the single biggest speed boost.
+
+## Command-line version
 
 ```
 TorrentFast-CLI.exe "magnet:?xt=urn:btih:..."
-TorrentFast-CLI.exe archivo.torrent -o D:\Descargas --seq
-TorrentFast-CLI.exe lista.txt --seed 1.5 --max-down 5000
+TorrentFast-CLI.exe file.torrent -o D:\Downloads --seq
+TorrentFast-CLI.exe list.txt --seed 1.5 --max-down 5000
 ```
 
-## Desde el código
+## Run from source
 
 ```
 pip install -r requirements.txt
-python torrentfast_web.py        # interfaz web
-python torrentfast.py MAGNET     # terminal
+python torrentfast_app.py      # desktop app
+python torrentfast_web.py      # browser mode (http://localhost:8800)
+python torrentfast.py MAGNET   # command line
 ```
 
-Cada cambio en `main` compila el `.exe` en Windows con GitHub Actions y publica una versión nueva.
+| File | What it does |
+|---|---|
+| `torrentfast.py` | Tuned libtorrent session and the command-line downloader |
+| `torrentfast_web.py` | Engine (queue, resume, settings) and local HTTP API |
+| `torrentfast_app.py` | Native window (Edge WebView2), single instance, magnet hand-off |
+| `ui/index.html` | The interface (Fluent design, ES/EN) |
 
-## Contribuir
+Every push is built and tested on Windows by GitHub Actions; publishing a release attaches the `.exe` files automatically.
 
-Lee [CONTRIBUTING.md](CONTRIBUTING.md). Para reportar fallas de seguridad, mira [SECURITY.md](SECURITY.md). Los cambios por versión están en [CHANGELOG.md](CHANGELOG.md).
+## Contributing
 
-## Uso responsable
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md). Release notes: [CHANGELOG.md](CHANGELOG.md).
 
-Úsalo para contenido que tengas derecho a descargar: distribuciones de Linux, contenido libre o con licencia abierta, y tus propios archivos.
+## Responsible use
 
-## Licencia
+Use TorrentFast for content you have the right to download: Linux distributions, open-licensed media, public-domain works and your own files.
 
-MIT © 2026 Adrián Garza Garza
+## License
+
+[MIT](LICENSE) © 2026 Adrián Garza Garza

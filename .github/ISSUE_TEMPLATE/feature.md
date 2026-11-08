@@ -1,8 +1,8 @@
 ---
-name: Pedir una función
-about: Una idea para mejorar TorrentFast
+name: Feature request
+about: An idea to improve TorrentFast
 labels: enhancement
 ---
-**Qué te gustaría:**
+**What you'd like:**
 
-**Para qué lo usarías:**
+**How you would use it:**

@@ -1,13 +1,13 @@
 ---
-name: Reportar un error
-about: Algo no funciona como debería
+name: Bug report
+about: Something isn't working as expected
 labels: bug
 ---
-**Qué pasó:**
+**What happened:**
 
-**Qué esperabas:**
+**What you expected:**
 
-**Pasos para reproducirlo:**
+**Steps to reproduce:**
 1.
 
-**Versión de TorrentFast y Windows:**
+**TorrentFast version and Windows version:**

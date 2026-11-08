@@ -1,11 +1,11 @@
-# Política de seguridad
+# Security Policy
 
-## Versiones soportadas
-Solo la [última versión](https://github.com/adrngza83/torrentfast/releases/latest) recibe correcciones.
+## Supported versions
+Only the [latest release](https://github.com/adrngza83/torrentfast/releases/latest) receives fixes.
 
-## Reportar una vulnerabilidad
-No abras un issue público. Usa **Security → Report a vulnerability** en este repositorio (reporte privado). Respuesta esperada: en menos de 7 días.
+## Reporting a vulnerability
+Please **do not open a public issue**. Use **Security → Report a vulnerability** on this repository to send a private report. Expect a reply within 7 days.
 
-## Notas
-- La interfaz web escucha en el puerto 8800 de tu red local y **no tiene contraseña**: no la expongas a internet (no abras el 8800 en tu router).
-- Solo abre `.torrent` y magnets de fuentes de confianza.
+## Notes
+- The local API listens on `127.0.0.1` only. If you enable **phone access**, it listens on your local network **without a password**: only enable it on networks you trust, and never forward port 8800 on your router.
+- Only open `.torrent` files and magnet links from sources you trust.
