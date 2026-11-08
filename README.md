@@ -1,5 +1,11 @@
 # ⚡ TorrentFast
 
+[![Compilación](https://github.com/adrngza83/torrentfast/actions/workflows/build-exe.yml/badge.svg)](https://github.com/adrngza83/torrentfast/actions/workflows/build-exe.yml)
+[![Última versión](https://img.shields.io/github/v/release/adrngza83/torrentfast)](https://github.com/adrngza83/torrentfast/releases/latest)
+[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-green.svg)](LICENSE)
+![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6)
+![Python](https://img.shields.io/badge/python-3.12-3776AB)
+
 Descargador de torrents **rápido**, con interfaz web de colores que también funciona desde el celular.
 Creado por **Adrián Garza Garza** ([@adrngza83](https://github.com/adrngza83)).
 
@@ -47,6 +53,10 @@ python torrentfast.py MAGNET     # terminal
 ```
 
 Cada cambio en `main` compila el `.exe` en Windows con GitHub Actions y publica una versión nueva.
+
+## Contribuir
+
+Lee [CONTRIBUTING.md](CONTRIBUTING.md). Para reportar fallas de seguridad, mira [SECURITY.md](SECURITY.md). Los cambios por versión están en [CHANGELOG.md](CHANGELOG.md).
 
 ## Uso responsable
 
