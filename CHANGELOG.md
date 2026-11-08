@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-11-07
+### Added
+- **Segmented direct downloads** (IDM / aria2 style): paste any `https://` link and it downloads with up to 32 parallel connections (16 by default), pause/resume and resume after restart. Servers without range support fall back to one connection.
+- **Mirror servers (web seeds)** for torrents: add a direct link for the same file and TorrentFast downloads from that server and from peers at the same time. Mirrors already inside a torrent or magnet (`ws=`) are used automatically, with more connections.
+- **Smart priority**: torrents with the most people sharing move to the front of the queue; stalled torrents no longer block a download slot.
+- **Download this first** button per torrent; your choice always beats smart priority.
+- Links to `.torrent` files can be pasted directly.
+- Automated tests (`pytest`) run on Windows on every change.
+
+### Fixed
+- Deleting an unfinished direct download can never remove another file with the same name.
+
 ## [1.2.0] - 2026-11-07
 ### Added
 - Upload cap based on your line speed: set your internet speed (default 300 Mbps) and the share for uploading (default 10% = 30 Mbps). Download is never limited.
@@ -39,6 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Command-line version (`TorrentFast-CLI.exe`).
 - Automatic Windows `.exe` builds with GitHub Actions.
 
+[1.3.0]: https://github.com/adrngza83/torrentfast/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/adrngza83/torrentfast/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/adrngza83/torrentfast/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/adrngza83/torrentfast/releases/tag/v1.0.0

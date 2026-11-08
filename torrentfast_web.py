@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -23,6 +24,7 @@ try:
 except ImportError:
     sys.exit("libtorrent is missing. Run:  pip install libtorrent")
 
+from torrentfast_http import HttpDownload
 from torrentfast import DEFAULT_LINE_MBPS, DEFAULT_UP_PCT, EXTRA_TRACKERS, make_session, upload_limit_bytes
 
 APP_NAME = "TorrentFast"
@@ -76,7 +78,8 @@ class Engine:
         self.settings_file = os.path.join(self.dir, "settings.json")
         self.sources_file = os.path.join(self.dir, "sources.json")
         self.settings = {"lang": "auto", "save": default_save_dir(),
-                         "line_mbps": DEFAULT_LINE_MBPS, "up_pct": DEFAULT_UP_PCT}
+                         "line_mbps": DEFAULT_LINE_MBPS, "up_pct": DEFAULT_UP_PCT,
+                         "http_connections": 16, "smart_queue": True}
         if os.path.exists(self.settings_file):
             try:
                 with open(self.settings_file, encoding="utf-8") as f:
@@ -88,10 +91,14 @@ class Engine:
         os.makedirs(self.settings["save"], exist_ok=True)
         self.ses = make_session(args)
         self.apply_limits()
-        self.sources = {}  # info_hash -> {"src": magnet or .torrent path, "save": folder}
+        self.sources = {}  # id -> {"src": magnet / .torrent path / http url, "save": folder}
+        self.http = {}     # id -> HttpDownload
+        self.pinned = []   # torrents the user moved to the front ("download this first")
+        os.makedirs(os.path.join(self.dir, "http"), exist_ok=True)
         self.lan_url = None
         self._restore()
         threading.Thread(target=self._autosave, daemon=True).start()
+        threading.Thread(target=self._smart_queue, daemon=True).start()
 
     # ---------- persistence ----------
     def _write_json(self, path, obj):
@@ -101,6 +108,8 @@ class Engine:
         os.replace(tmp, path)
 
     def save_settings(self, **kw):
+        if kw.get("http_connections") is not None:
+            kw["http_connections"] = max(1, min(32, int(kw["http_connections"])))
         for k in ("line_mbps", "up_pct"):
             if kw.get(k) is not None:
                 v = float(kw[k])
@@ -131,7 +140,10 @@ class Engine:
             return
         for entry in saved.values():
             try:
-                self.add(entry["src"], save=entry.get("save"), persist=False)
+                if entry.get("type") == "http":
+                    self._add_http(entry["src"], entry.get("save"), persist=False, paused=True)
+                else:
+                    self.add(entry["src"], save=entry.get("save"), persist=False)
             except Exception as e:  # keep going if one entry is broken
                 print("Could not restore:", e)
         self._persist()
@@ -165,12 +177,23 @@ class Engine:
                     pending -= 1
 
     def shutdown(self):
+        for dl in self.http.values():
+            dl.stop()
         self.ses.pause()
         self.save_resume()
 
     # ---------- actions ----------
     def add(self, src, save=None, persist=True, torrent_bytes=None, filename=None):
         src = (src or "").strip()
+        if src.lower().startswith(("http://", "https://")) and torrent_bytes is None \
+                and not urlparse(src).path.lower().endswith(".torrent"):
+            return self._add_http(src, save, persist)
+        if src.lower().startswith(("http://", "https://")) and torrent_bytes is None:
+            # a link to a .torrent file: fetch it, then add it as a torrent
+            req = urllib.request.Request(src, headers={"User-Agent": "TorrentFast"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                torrent_bytes = r.read(20 * 1024 * 1024)
+            filename = os.path.basename(urlparse(src).path)
         if torrent_bytes is not None:
             name = os.path.basename(filename or "upload.torrent")
             lt.torrent_info(lt.bdecode(torrent_bytes))  # validate before saving
@@ -183,7 +206,7 @@ class Engine:
             p = lt.add_torrent_params()
             p.ti = lt.torrent_info(src)
         else:
-            raise ValueError("Not a magnet link or .torrent file")
+            raise ValueError("Not a magnet, .torrent file or http(s) link")
         ih = str(p.info_hashes.get_best())
         if ih in self.sources and self.find(ih):
             return ih  # already in the list
@@ -204,13 +227,29 @@ class Engine:
                 self._persist()
         return ih
 
+    def _add_http(self, url, save=None, persist=True, paused=False):
+        save = save or self.settings["save"]
+        dl = HttpDownload(url, save, os.path.join(self.dir, "http"),
+                          self.settings.get("http_connections", 16))
+        if dl.id in self.http:
+            return dl.id
+        self.http[dl.id] = dl
+        self.sources[dl.id] = {"src": url, "save": save, "type": "http"}
+        if persist:
+            self._persist()
+        if not (dl.status == "done" or (paused and dl.status == "paused")):
+            dl.start()
+        return dl.id
+
     def find(self, ih):
         for h in self.ses.get_torrents():
             if str(h.info_hashes().get_best()) == ih:
                 return h
         return None
 
-    def action(self, ih, act):
+    def action(self, ih, act, value=None):
+        if ih in self.http:
+            return self._http_action(ih, act)
         h = self.find(ih)
         if not h:
             raise ValueError("Torrent not found")
@@ -226,6 +265,16 @@ class Engine:
                     h.unset_flags(lt.torrent_flags.sequential_download)
                 else:
                     h.set_flags(lt.torrent_flags.sequential_download)
+            elif act == "top":
+                self.pinned = [ih] + [p for p in self.pinned if p != ih]
+                h.queue_position_top()
+                h.set_flags(lt.torrent_flags.auto_managed)
+                h.resume()
+            elif act == "mirror":
+                url = (value or "").strip()
+                if not url.lower().startswith(("http://", "https://")):
+                    raise ValueError("Mirror must be an http(s) link")
+                h.add_url_seed(url)
             elif act == "open":
                 st = h.status()
                 target = os.path.join(st.save_path, st.name) if st.name else st.save_path
@@ -233,6 +282,7 @@ class Engine:
             elif act in ("remove", "delete"):
                 self.ses.remove_torrent(h, lt.session.delete_files if act == "delete" else 0)
                 self.sources.pop(ih, None)
+                self.pinned = [p for p in self.pinned if p != ih]
                 self._persist()
                 rp = self._resume_path(ih)
                 if os.path.exists(rp):
@@ -240,9 +290,59 @@ class Engine:
             else:
                 raise ValueError("Unknown action")
 
+    def _http_action(self, ih, act):
+        dl = self.http[ih]
+        if act == "pause":
+            dl.pause()
+        elif act in ("resume", "top"):
+            dl.start()
+        elif act == "open":
+            open_path(dl.path if os.path.exists(dl.path) else dl.save_dir)
+        elif act in ("remove", "delete"):
+            dl.remove(delete_files=act == "delete")
+            del self.http[ih]
+            self.sources.pop(ih, None)
+            self._persist()
+        elif act == "seq":
+            pass
+        else:
+            raise ValueError("Not available for direct downloads")
+
     def bulk(self, act):
         for h in self.ses.get_torrents():
             self.action(str(h.info_hashes().get_best()), act)
+        for ih in list(self.http):
+            if act == "pause" or self.http[ih].status in ("paused", "error"):
+                self._http_action(ih, act)
+
+    def _smart_queue(self):
+        """Keep the best-seeded torrents at the front of the queue so the line stays full."""
+        while True:
+            time.sleep(15)
+            if self.settings.get("smart_queue", True):
+                self.rank_queue()
+
+    def rank_queue(self):
+        if True:
+            try:
+                with LOCK:
+                    waiting = []
+                    for h in self.ses.get_torrents():
+                        st = h.status()
+                        if st.is_seeding or st.is_finished or not (st.flags & lt.torrent_flags.auto_managed):
+                            continue
+                        # swarm size from trackers/DHT, falling back to peers we see
+                        seeds = max(st.num_complete, st.list_seeds, st.num_seeds)
+                        waiting.append((st.queue_position, -seeds, -st.download_payload_rate, h))
+                    ranked = sorted(waiting, key=lambda x: (x[1], x[2]))
+                    for _, _, _, h in reversed(ranked):
+                        h.queue_position_top()
+                    for ih in reversed(self.pinned):  # the user's choice always wins
+                        ph = self.find(ih)
+                        if ph:
+                            ph.queue_position_top()
+            except Exception as e:
+                print("smart queue:", e)
 
     def status(self):
         items, down, up = [], 0, 0
@@ -279,7 +379,14 @@ class Engine:
                 "kind": kind,
                 "seq": bool(h.flags() & lt.torrent_flags.sequential_download),
                 "error": st.errc.message() if st.errc.value() else "",
+                "type": "torrent",
+                "mirrors": len(h.url_seeds()),
+                "queue": st.queue_position,
             })
+        for dl in list(self.http.values()):
+            info = dl.info()
+            down += info["down"]
+            items.append(info)
         items.sort(key=lambda x: x["name"].lower())
         return {"items": items, "down": down, "up": up, "out": self.settings["save"],
                 "port": self.ses.listen_port(), "up_cap": self.upload_cap(),
@@ -354,7 +461,7 @@ def make_handler(engine):
                     name = parse_qs(u.query).get("name", ["upload.torrent"])[0]
                     self._json({"ih": engine.add("", torrent_bytes=body, filename=name)})
                 elif u.path == "/api/action":
-                    engine.action(data["ih"], data["act"])
+                    engine.action(data["ih"], data["act"], data.get("value"))
                     self._json({"ok": True})
                 elif u.path == "/api/bulk":
                     engine.bulk(data["act"])
@@ -364,6 +471,8 @@ def make_handler(engine):
                     self._json({"ok": True})
                 elif u.path == "/api/settings":
                     engine.save_settings(lang=data.get("lang"), save=data.get("save"), lan=data.get("lan"),
+                                         http_connections=data.get("http_connections"),
+                                         smart_queue=data.get("smart_queue"),
                                          line_mbps=data.get("line_mbps"), up_pct=data.get("up_pct"))
                     self._json({"ok": True})
                 elif u.path == "/api/associate":

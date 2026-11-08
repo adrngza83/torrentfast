@@ -35,6 +35,9 @@ Created by <b>Adrián Garza Garza</b> (<a href="https://github.com/adrngza83">@a
 - ▶️ **Sequential download** to watch a video while it downloads
 - ⏯ Pause/resume everything; downloads continue where they left off after a restart
 - 📱 **Phone access** (optional): control it from any device on your Wi-Fi
+- ⚡ **Segmented direct downloads**: paste any `https://` link and it downloads with up to 32 parallel connections, like IDM or aria2
+- 🪞 **Mirror servers**: add a direct link to a torrent and download from that server and from peers at the same time
+- 🧠 **Smart priority**: the best-seeded torrents go first, plus a *Download this first* button
 - 🚀 **Full download speed, capped upload**: set your internet speed (default 300 Mbps) and upload is limited to a share of it (default 10%); download is never limited
 - 🌐 Spanish and English, automatic by system language
 
@@ -70,11 +73,12 @@ python torrentfast.py MAGNET   # command line
 | File | What it does |
 |---|---|
 | `torrentfast.py` | Tuned libtorrent session and the command-line downloader |
+| `torrentfast_http.py` | Segmented HTTP downloader (parallel ranges, resume) |
 | `torrentfast_web.py` | Engine (queue, resume, settings) and local HTTP API |
 | `torrentfast_app.py` | Native window (Edge WebView2), single instance, magnet hand-off |
 | `ui/index.html` | The interface (Fluent design, ES/EN) |
 
-Every push is built and tested on Windows by GitHub Actions; publishing a release attaches the `.exe` files automatically.
+Run the tests with `python -m pytest`. Every push is tested and built on Windows by GitHub Actions; publishing a release attaches the `.exe` files automatically.
 
 ## Contributing
 

@@ -115,6 +115,12 @@ body.focus .row[data-k=done],body.focus .row[data-k=paused]{display:none}
   <div class="foot"><button class="btn primary" id="addOk" data-t="download"></button><button class="btn std" data-close data-t="cancel"></button></div>
 </div></div>
 
+<div class="scrim" id="mirDlg"><div class="dlg">
+  <div class="body"><h3 data-t="addMirror"></h3><p style="margin:0 0 10px;color:var(--mut)" data-t="mirrorSub"></p>
+    <textarea id="mirUrl" style="height:70px" placeholder="https://…"></textarea></div>
+  <div class="foot"><button class="btn primary" id="mirOk" data-t="add"></button><button class="btn std" data-close data-t="cancel"></button></div>
+</div></div>
+
 <div class="scrim" id="setDlg"><div class="dlg">
   <div class="body"><h3 data-t="settings"></h3>
     <div class="set"><div><span data-t="language"></span></div>
@@ -123,6 +129,10 @@ body.focus .row[data-k=done],body.focus .row[data-k=paused]{display:none}
       <span><input type="number" id="lineMbps" min="1" max="100000" step="1" class="num"> Mbps</span></div>
     <div class="set"><div><span data-t="upMax"></span><small id="upCalc"></small></div>
       <select id="upPct"><option value="5">5%</option><option value="10">10%</option><option value="20">20%</option><option value="50">50%</option><option value="100" data-t="noLimit"></option></select></div>
+    <div class="set"><div><span data-t="httpConn"></span><small data-t="httpConnSub"></small></div>
+      <select id="httpConn"><option>4</option><option>8</option><option>16</option><option>32</option></select></div>
+    <div class="set"><div><span data-t="smartQ"></span><small data-t="smartQSub"></small></div>
+      <button class="btn std" id="smartBtn"></button></div>
     <div class="set"><div><span data-t="saveIn"></span><small id="savePath"></small></div>
       <button class="btn std" id="chooseDir" data-t="change"></button></div>
     <div class="set" id="assocRow"><div><span data-t="assoc"></span><small data-t="assocSub"></small></div>
@@ -139,9 +149,12 @@ body.focus .row[data-k=done],body.focus .row[data-k=paused]{display:none}
 <script>
 const I18N={
  es:{all:"Todos",down:"Descargando",meta:"Buscando datos",done:"Completados",paused:"Pausados",error:"Con error",check:"Verificando",
-  focus:"Modo enfoque",settings:"Configuración",addMagnet:"Agregar magnet",openTorrent:"Abrir .torrent",pauseAll:"Pausar todo",resumeAll:"Reanudar todo",
-  folder:"Abrir carpeta",download:"Descargar",cancel:"Cancelar",close:"Cerrar",magnetPh:"Pega uno o varios enlaces magnet:?xt=… (uno por línea)",
-  language:"Idioma",lineSpeed:"Velocidad de tu internet",lineSub:"La bajada nunca se limita",upMax:"Subida máxima",noLimit:"Sin límite",upTo:"hasta",limit:"límite",auto:"Automático",saveIn:"Guardar descargas en",change:"Cambiar…",assoc:"Abrir magnets y .torrent con TorrentFast",
+  focus:"Modo enfoque",settings:"Configuración",addMagnet:"Agregar descarga",openTorrent:"Abrir .torrent",pauseAll:"Pausar todo",resumeAll:"Reanudar todo",
+  folder:"Abrir carpeta",download:"Descargar",cancel:"Cancelar",close:"Cerrar",magnetPh:"Pega magnets, links a .torrent o links de descarga directa https://… (uno por línea)",
+  language:"Idioma",addMirror:"Agregar servidor espejo",mirrorSub:"Un enlace de descarga directa del mismo archivo. TorrentFast baja de ese servidor y de las personas al mismo tiempo.",add:"Agregar",
+  httpConn:"Conexiones por descarga directa",httpConnSub:"Más conexiones = más rápido en links https://",smartQ:"Prioridad inteligente",smartQSub:"Primero los torrents con más gente compartiendo",
+  direct:"Directo",conns:"conexiones",mirrors:"espejos",top:"Bajar este primero",mirror:"Agregar espejo",noRanges:"este servidor solo permite 1 conexión",
+  pasteLink:"Link detectado: revisa y presiona Descargar",lineSpeed:"Velocidad de tu internet",lineSub:"La bajada nunca se limita",upMax:"Subida máxima",noLimit:"Sin límite",upTo:"hasta",limit:"límite",auto:"Automático",saveIn:"Guardar descargas en",change:"Cambiar…",assoc:"Abrir magnets y .torrent con TorrentFast",
   assocSub:"Al dar clic en un magnet en cualquier página se agrega aquí",enable:"Activar",enabled:"Activado ✓",phone:"Desde el celular",
   dropHere:"Suelta tus archivos .torrent aquí",emptyT:"Nada por aquí todavía",emptyS:"Pega un magnet con Ctrl+V o arrastra un .torrent a esta ventana",
   pause:"Pausar",resume:"Reanudar",seq:"Descarga secuencial (para ver video mientras baja)",remove:"Quitar de la lista",del:"Borrar archivos",
@@ -149,9 +162,12 @@ const I18N={
   offline:"Sin conexión con el motor…",lanOff:"Desactivado",lanRestart:"Reinicia TorrentFast para aplicar el cambio",disable:"Desactivar",paused_:"pausado",
   st:["en cola","verificando","buscando datos","descargando","terminado","compartiendo","preparando","verificando"]},
  en:{all:"All",down:"Downloading",meta:"Fetching metadata",done:"Completed",paused:"Paused",error:"Errors",check:"Checking",
-  focus:"Focus mode",settings:"Settings",addMagnet:"Add magnet",openTorrent:"Open .torrent",pauseAll:"Pause all",resumeAll:"Resume all",
-  folder:"Open folder",download:"Download",cancel:"Cancel",close:"Close",magnetPh:"Paste one or more magnet:?xt=… links (one per line)",
-  language:"Language",lineSpeed:"Your internet speed",lineSub:"Download is never limited",upMax:"Max upload",noLimit:"Unlimited",upTo:"up to",limit:"limit",auto:"Automatic",saveIn:"Save downloads to",change:"Change…",assoc:"Open magnets and .torrent files with TorrentFast",
+  focus:"Focus mode",settings:"Settings",addMagnet:"Add download",openTorrent:"Open .torrent",pauseAll:"Pause all",resumeAll:"Resume all",
+  folder:"Open folder",download:"Download",cancel:"Cancel",close:"Close",magnetPh:"Paste magnets, .torrent links or direct download https://… links (one per line)",
+  language:"Language",addMirror:"Add mirror server",mirrorSub:"A direct download link for the same file. TorrentFast downloads from that server and from peers at the same time.",add:"Add",
+  httpConn:"Connections per direct download",httpConnSub:"More connections = faster on https:// links",smartQ:"Smart priority",smartQSub:"Torrents with the most people sharing go first",
+  direct:"Direct",conns:"connections",mirrors:"mirrors",top:"Download this first",mirror:"Add mirror",noRanges:"this server only allows 1 connection",
+  pasteLink:"Link detected: check it and press Download",lineSpeed:"Your internet speed",lineSub:"Download is never limited",upMax:"Max upload",noLimit:"Unlimited",upTo:"up to",limit:"limit",auto:"Automatic",saveIn:"Save downloads to",change:"Change…",assoc:"Open magnets and .torrent files with TorrentFast",
   assocSub:"Clicking a magnet link on any page adds it here",enable:"Enable",enabled:"Enabled ✓",phone:"From your phone",
   dropHere:"Drop your .torrent files here",emptyT:"Nothing here yet",emptyS:"Paste a magnet with Ctrl+V or drag a .torrent into this window",
   pause:"Pause",resume:"Resume",seq:"Sequential download (watch video while downloading)",remove:"Remove from list",del:"Delete files",
@@ -178,16 +194,17 @@ let tt;function toast(t,err){const e=$("toast");e.textContent=t;e.style.color=er
 async function api(p,body){const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});
   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.status);return j}
 
-async function addMagnets(text){const links=text.split(/\s+/).filter(s=>s.startsWith("magnet:"));if(!links.length)return false;
+async function addMagnets(text){const links=text.split(/\s+/).filter(s=>/^(magnet:|https?:\/\/)/i.test(s));if(!links.length)return false;
   let ok=0;for(const m of links){try{await api("/api/add",{src:m});ok++}catch(e){toast(e.message,1)}}
   if(ok)toast(L.added+(ok>1?" ("+ok+")":""));tick();return true}
 async function uploadFiles(files){for(const f of files){if(!f.name.toLowerCase().endsWith(".torrent"))continue;
   try{const r=await fetch("/api/upload?name="+encodeURIComponent(f.name),{method:"POST",body:f});if(!r.ok)throw new Error((await r.json()).error);toast(L.added)}catch(e){toast(e.message,1)}}tick()}
 
 const armed={};
-async function act(ih,a){
+let mirFor=null;function openMirror(ih){mirFor=ih;$("mirUrl").value="";$("mirDlg").classList.add("on");setTimeout(()=>$("mirUrl").focus(),50)}
+async function act(ih,a,value){
   if(a==="delete"){if(!armed[ih]){armed[ih]=1;toast(L.confirmDel);setTimeout(()=>delete armed[ih],4000);return}delete armed[ih]}
-  try{await api("/api/action",{ih,act:a});tick()}catch(e){toast(e.message,1)}}
+  try{await api("/api/action",{ih,act:a,value});tick();if(a==="mirror")toast(L.added)}catch(e){toast(e.message,1)}}
 
 function navs(items){const c={all:items.length};items.forEach(t=>c[t.kind]=(c[t.kind]||0)+1);
   const keys=["all","down","meta","done","paused","error"];
@@ -197,15 +214,18 @@ function navs(items){const c={all:items.length};items.forEach(t=>c[t.kind]=(c[t.
 
 function render(){const d=last;navs(d.items);
   const it=d.items.filter(t=>filt==="all"||t.kind===filt);
-  $("list").innerHTML=it.length?it.map(t=>{const st=t.paused?L.paused_:(L.st[t.state]||"");
+  $("list").innerHTML=it.length?it.map(t=>{const st=t.paused?L.paused_:(t.type==="http"?({downloading:L.st[3],probing:L.st[2],queued:L.st[0],done:L.done,error:L.error}[t.http_state]||""):(L.st[t.state]||""));
    return `<div class="row" data-k="${t.kind}" style="--c:${COL[t.kind]}">
    <div class="name" title="${esc(t.name)}">${esc(t.name)}</div><span class="pill">${st}</span>
    <div class="bar"><div style="width:${(t.progress*100).toFixed(1)}%"></div></div>
    <div class="meta"><span><b>${(t.progress*100).toFixed(1)}%</b> ${L.of} ${h(t.size)}</span><span>↓ <b>${h(t.down)}/s</b></span><span>↑ ${h(t.up)}/s</span>
-    <span><b>${t.peers}</b> ${L.peers} (${t.seeds} seeds)</span><span>${L.eta} <b>${eta(t.eta)}</b></span>${t.error?`<span style="color:var(--error)">${esc(t.error)}</span>`:""}</div>
+    ${t.type==="http"?`<span><b>${L.direct}</b> · <b>${t.peers}</b> ${L.conns}${t.ranges===false&&t.http_state!=="probing"&&t.http_state!=="queued"?" ("+L.noRanges+")":""}</span>`
+      :`<span><b>${t.peers}</b> ${L.peers} (${t.seeds} seeds)${t.mirrors?` · <b>${t.mirrors}</b> ${L.mirrors}`:""}</span>`}<span>${L.eta} <b>${eta(t.eta)}</b></span>${t.error?`<span style="color:var(--error)">${esc(t.error)}</span>`:""}</div>
    <div class="acts">
     ${t.paused?`<button class="ib" title="${L.resume}" onclick="act('${t.ih}','resume')"><i class="ico">&#xE768;</i></button>`:`<button class="ib" title="${L.pause}" onclick="act('${t.ih}','pause')"><i class="ico">&#xE769;</i></button>`}
-    <button class="ib ${t.seq?"on":""}" title="${L.seq}" onclick="act('${t.ih}','seq')"><i class="ico">&#xE8CB;</i></button>
+    ${t.type!=="http"&&t.kind!=="done"?`<button class="ib" title="${L.top}" onclick="act('${t.ih}','top')"><i class="ico">&#xE74A;</i></button>
+    <button class="ib" title="${L.mirror}" onclick="openMirror('${t.ih}')"><i class="ico">&#xE71B;</i></button>
+    <button class="ib ${t.seq?"on":""}" title="${L.seq}" onclick="act('${t.ih}','seq')"><i class="ico">&#xE8CB;</i></button>`:""}
     <button class="ib" title="${L.openItem}" onclick="act('${t.ih}','open')"><i class="ico">&#xE838;</i></button>
     <button class="ib" title="${L.remove}" onclick="act('${t.ih}','remove')"><i class="ico">&#xE711;</i></button>
     <button class="ib danger" title="${L.del}" onclick="act('${t.ih}','delete')"><i class="ico">&#xE74D;</i></button>
@@ -232,7 +252,9 @@ document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>b.closest(".s
 document.addEventListener("keydown",e=>{
   if(e.key==="Escape")document.querySelectorAll(".scrim.on").forEach(s=>s.classList.remove("on"));
   if(e.key==="Enter"&&e.ctrlKey&&$("addDlg").classList.contains("on"))$("addOk").click();});
-document.addEventListener("paste",e=>{if(e.target.tagName==="TEXTAREA")return;const t=(e.clipboardData||window.clipboardData).getData("text");if(t)addMagnets(t)});
+document.addEventListener("paste",e=>{if(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT")return;const t=((e.clipboardData||window.clipboardData).getData("text")||"").trim();if(!t)return;
+  if(/^magnet:/i.test(t))addMagnets(t);
+  else if(/^https?:\/\//i.test(t)){$("addDlg").classList.add("on");$("mag").value=t;toast(L.pasteLink)}});
 let dz=0;
 document.addEventListener("dragenter",e=>{e.preventDefault();dz++;$("drop").classList.add("on")});
 document.addEventListener("dragleave",e=>{dz--;if(dz<=0){dz=0;$("drop").classList.remove("on")}});
@@ -245,13 +267,17 @@ async function loadCfg(){cfg=await (await fetch("/api/settings")).json();setLang
   $("savePath").textContent=cfg.save;$("lineMbps").value=cfg.line_mbps;$("upPct").value=String(Math.round(cfg.up_pct));
   const cap=cfg.up_pct>=100?0:cfg.line_mbps*1e6/8*cfg.up_pct/100;
   $("upCalc").textContent=cap?`${L.upTo} ${mb(cap)} (${h(cap)}/s)`:L.noLimit;$("lanUrl").textContent=cfg.lan_url||L.lanOff;
-  $("lanBtn").textContent=cfg.lan?L.disable:L.enable;
+  $("lanBtn").textContent=cfg.lan?L.disable:L.enable;$("httpConn").value=String(cfg.http_connections||16);
+  $("smartBtn").textContent=cfg.smart_queue===false?L.enable:L.enabled;
   if(!!cfg.lan!==!!cfg.lan_active)$("lanUrl").textContent=L.lanRestart;
   $("assocRow").style.display=cfg.can_associate?"":"none";$("assocBtn").textContent=cfg.associated?L.enabled:L.enable;}
 $("setBtn").onclick=()=>{loadCfg();$("setDlg").classList.add("on")};
 $("lineMbps").onchange=async()=>{try{await api("/api/settings",{line_mbps:+$("lineMbps").value});loadCfg()}catch(e){toast(e.message,1)}};
 $("upPct").onchange=async()=>{await api("/api/settings",{up_pct:+$("upPct").value});loadCfg()};
 $("lang").onchange=async()=>{await api("/api/settings",{lang:$("lang").value});loadCfg()};
+$("httpConn").onchange=async()=>{await api("/api/settings",{http_connections:+$("httpConn").value});loadCfg()};
+$("smartBtn").onclick=async()=>{await api("/api/settings",{smart_queue:cfg.smart_queue===false});loadCfg()};
+$("mirOk").onclick=async()=>{const u=$("mirUrl").value.trim();if(!u)return;await act(mirFor,"mirror",u);$("mirDlg").classList.remove("on")};
 $("lanBtn").onclick=async()=>{await api("/api/settings",{lan:!cfg.lan});loadCfg()};
 $("assocBtn").onclick=async()=>{try{await api("/api/associate");loadCfg();toast(L.enabled)}catch(e){toast(e.message,1)}};
 $("chooseDir").onclick=async()=>{let p=null;

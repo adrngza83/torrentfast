@@ -28,6 +28,9 @@ Creado por <b>Adrián Garza Garza</b> (<a href="https://github.com/adrngza83">@a
 - ▶️ **Descarga secuencial** para ver un video mientras baja
 - ⏯ Pausar/reanudar todo; si cierras la app, sigue donde se quedó
 - 📱 **Desde el celular** (opcional): contrólala desde cualquier dispositivo en tu WiFi
+- ⚡ **Descarga dividida de links directos**: pega cualquier link `https://` y baja con hasta 32 conexiones a la vez, como IDM o aria2
+- 🪞 **Servidores espejo**: agrega un link directo a un torrent y baja de ese servidor y de las personas al mismo tiempo
+- 🧠 **Prioridad inteligente**: primero los torrents con más gente compartiendo, y botón *Bajar este primero*
 - 🚀 **Bajada a toda velocidad, subida limitada**: pones la velocidad de tu internet (300 Mbps por defecto) y la subida se limita a un porcentaje (10% por defecto); la bajada nunca se limita
 - 🌐 Español e inglés, automático según el idioma de tu sistema
 

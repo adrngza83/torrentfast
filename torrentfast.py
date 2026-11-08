@@ -96,6 +96,14 @@ def make_session(args):
         "hashing_threads": 4,
         "rate_limit_ip_overhead": False,   # protocol overhead doesn't eat into the limits
         "download_rate_limit": 0,          # download: never limited
+        # Mirrors (web seeds): use more HTTP connections and bigger requests
+        "max_web_seed_connections": 8,
+        "urlseed_pipeline_size": 8,
+        "urlseed_max_request_bytes": 16 * 1024 * 1024,
+        # Smart queue: slow/stalled torrents don't block a download slot
+        "dont_count_slow_torrents": True,
+        "inactive_down_rate": 20 * 1024,
+        "auto_manage_startup": 30,
         "whole_pieces_threshold": 20,
         "peer_timeout": 60,
         "inactivity_timeout": 300,
