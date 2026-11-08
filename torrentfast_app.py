@@ -10,14 +10,23 @@ TorrentFast desktop app: native window (Edge WebView2 on Windows) around the Tor
 """
 import argparse
 import json
+import logging
 import os
 import sys
 import time
+import traceback
+import urllib.parse
 import urllib.request
 
 from torrentfast_web import APP_NAME, Engine, add_common_args, data_dir, start_server
 
 PORT_FILE = os.path.join(data_dir(), "instance.json")
+logging.basicConfig(filename=os.path.join(data_dir(), "app.log"), level=logging.INFO,
+                    format="%(asctime)s [%(process)d] %(levelname)s %(message)s")
+log = logging.getLogger("torrentfast")
+
+# Talk to our own local server directly, never through a system proxy.
+LOCAL = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def running_instance():
@@ -29,9 +38,10 @@ def running_instance():
         return None
     for _ in range(3):  # the open window may be busy for a moment
         try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=3).read()
+            LOCAL.open(f"http://127.0.0.1:{port}/api/status", timeout=3).read()
             return port
-        except Exception:
+        except Exception as e:
+            log.warning("instance on port %s not answering: %s", port, e)
             time.sleep(0.5)
     return None
 
@@ -41,15 +51,16 @@ def send_to_instance(port, items):
         if item.lower().endswith(".torrent") and os.path.isfile(item):
             with open(item, "rb") as f:
                 data = f.read()
-            url = f"http://127.0.0.1:{port}/api/upload?name={urllib.request.quote(os.path.basename(item))}"
+            url = f"http://127.0.0.1:{port}/api/upload?name={urllib.parse.quote(os.path.basename(item))}"
         else:
             data = json.dumps({"src": item}).encode()
             url = f"http://127.0.0.1:{port}/api/add"
         req = urllib.request.Request(url, data=data, method="POST")
         try:
-            urllib.request.urlopen(req, timeout=5).read()
+            LOCAL.open(req, timeout=10).read()
+            log.info("handed %s to running instance", item[:60])
         except Exception as e:
-            print("Could not add:", e)
+            log.error("could not hand off %s: %s", item[:60], e)
 
 
 class JsApi:
@@ -71,11 +82,13 @@ def main():
     ap.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
+    log.info("start args=%s", [a[:60] for a in sys.argv[1:]])
     if not args.selftest:
         port = running_instance()
         if port:
             send_to_instance(port, args.items)
-            return
+            log.info("exit after hand-off")
+            os._exit(0)
 
     engine = Engine(args)
     _, port = start_server(engine, "0.0.0.0" if (args.lan or engine.settings.get("lan")) else "127.0.0.1", args.web_port)
@@ -91,8 +104,8 @@ def main():
 
     if args.selftest:
         try:
-            body = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=5).read()
-            page = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read()
+            body = LOCAL.open(f"http://127.0.0.1:{port}/api/status", timeout=5).read()
+            page = LOCAL.open(f"http://127.0.0.1:{port}/", timeout=5).read()
             ok = b"TorrentFast" in page and "items" in json.loads(body)
             import webview  # noqa: F401  (make sure the GUI toolkit is bundled)
         except Exception as e:
@@ -104,6 +117,7 @@ def main():
 
     with open(PORT_FILE, "w", encoding="utf-8") as f:
         json.dump({"port": port, "pid": os.getpid()}, f)
+    log.info("window starting, api on port %s", port)
 
     import webview
 
@@ -127,4 +141,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception:
+        log.error("crash:\n%s", traceback.format_exc())
+        os._exit(1)

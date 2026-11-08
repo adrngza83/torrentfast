@@ -66,6 +66,11 @@ jobs:
           if ($s.up_cap -ne 3750000) { throw "Upload cap is $($s.up_cap), expected 3750000 (10% of 300 Mbps)" }
           Write-Host "Window OK on port $port, magnet handed off, upload cap $($s.up_cap) B/s"
 
+      - name: Show app log
+        if: always()
+        shell: pwsh
+        run: Get-Content "$env:APPDATA\TorrentFast\app.log" -ErrorAction SilentlyContinue
+
       - uses: actions/upload-artifact@v4
         with:
           name: TorrentFast-windows
